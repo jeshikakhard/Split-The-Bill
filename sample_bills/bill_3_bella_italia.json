@@ -1,0 +1,56 @@
+{
+  "restaurant_name": "Bella Italia Trattoria",
+  "date": "03-Sep-2026",
+  "items": [
+    {
+      "name": "Woodfired Margherita Pizza",
+      "quantity": 1,
+      "unit_price": 450,
+      "total": 450,
+      "confidence": 0.98
+    },
+    {
+      "name": "Truffle Mushroom Penne",
+      "quantity": 1,
+      "unit_price": 520,
+      "total": 520,
+      "confidence": 0.95
+    },
+    {
+      "name": "Cheesy Garlic Bread",
+      "quantity": 1,
+      "unit_price": 180,
+      "total": 180,
+      "confidence": 0.93
+    },
+    {
+      "name": "Classic Tiramisu",
+      "quantity": 1,
+      "unit_price": 300,
+      "total": 300,
+      "confidence": 0.94
+    },
+    {
+      "name": "Peach Iced Tea",
+      "quantity": 2,
+      "unit_price": 120,
+      "total": 240,
+      "confidence": 0.96
+    }
+  ],
+  "subtotal": 1690,
+  "discount": 169,
+  "tax": 76.05,
+  "service_charge": 152.1,
+  "total": 1749.15,
+  "field_confidence": {
+    "restaurant_name": 0.95,
+    "date": 0.92,
+    "subtotal": 0.96,
+    "discount": 0.9,
+    "tax": 0.94,
+    "service_charge": 0.91,
+    "total": 0.98
+  },
+  "raw_notes": "Italian dining with 10% Happy Hour discount, proportional GST and service charge."
+}

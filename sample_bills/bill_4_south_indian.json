@@ -1,0 +1,49 @@
+{
+  "restaurant_name": "Dakshin Tiffin Room",
+  "date": "04-Sep-2026",
+  "items": [
+    {
+      "name": "Special Masala Dosa",
+      "quantity": 2,
+      "unit_price": 120,
+      "total": 240,
+      "confidence": 0.97
+    },
+    {
+      "name": "Ghee Podi Idli (4 pcs)",
+      "quantity": 1,
+      "unit_price": 120,
+      "total": 120,
+      "confidence": 0.96
+    },
+    {
+      "name": "Medu Vada (2 pcs)",
+      "quantity": 1,
+      "unit_price": 100,
+      "total": 100,
+      "confidence": 0.94
+    },
+    {
+      "name": "Madras Filter Coffee",
+      "quantity": 3,
+      "unit_price": 60,
+      "total": 180,
+      "confidence": 0.98
+    }
+  ],
+  "subtotal": 640,
+  "discount": 0,
+  "tax": 32,
+  "service_charge": 0,
+  "total": 672,
+  "field_confidence": {
+    "restaurant_name": 0.95,
+    "date": 0.92,
+    "subtotal": 0.96,
+    "discount": 0.9,
+    "tax": 0.94,
+    "service_charge": 0.91,
+    "total": 0.98
+  },
+  "raw_notes": "Authentic South Indian breakfast with 5% GST and no service charge."
+}

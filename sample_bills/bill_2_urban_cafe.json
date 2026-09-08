@@ -1,0 +1,49 @@
+{
+  "restaurant_name": "Urban Brew Cafe & Roastery",
+  "date": "02-Sep-2026",
+  "items": [
+    {
+      "name": "Cappuccino Grande",
+      "quantity": 2,
+      "unit_price": 180,
+      "total": 360,
+      "confidence": 0.96
+    },
+    {
+      "name": "Avocado Sourdough Toast",
+      "quantity": 1,
+      "unit_price": 320,
+      "total": 320,
+      "confidence": 0.94
+    },
+    {
+      "name": "Blueberry Cheesecake",
+      "quantity": 1,
+      "unit_price": 280,
+      "total": 280,
+      "confidence": 0.95
+    },
+    {
+      "name": "Cold Brew Tonic",
+      "quantity": 1,
+      "unit_price": 180,
+      "total": 180,
+      "confidence": 0.91
+    }
+  ],
+  "subtotal": 1140,
+  "discount": 0,
+  "tax": 57,
+  "service_charge": 114,
+  "total": 1311,
+  "field_confidence": {
+    "restaurant_name": 0.95,
+    "date": 0.92,
+    "subtotal": 0.96,
+    "discount": 0.9,
+    "tax": 0.94,
+    "service_charge": 0.91,
+    "total": 0.98
+  },
+  "raw_notes": "Brunch & specialty cafe bill with 5% GST and 10% Service Charge."
+}
