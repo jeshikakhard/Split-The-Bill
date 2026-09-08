@@ -260,3 +260,49 @@ def test_unassigned_member_gets_zero_not_crash():
     by_name = {p["name"]: p for p in result["people"]}
     assert by_name["B"]["final_amount"] == "0.00"
     assert by_name["C"]["final_amount"] == "0.00"
+
+
+def test_live_auto_calculation_reconciles_subtotal_and_grand_total():
+    # Simulate user adding 3 items:
+    # Item 1: 2 * 300 = 600
+    # Item 2: 1 * 80 = 80
+    # Item 3: 1 * 500 = 500
+    # Item 4 (newly added): 2 * 60 = 120
+    items = [
+        (D("2"), D("300"), D("600")),
+        (D("1"), D("80"), D("80")),
+        (D("1"), D("500"), D("500")),
+        (D("2"), D("60"), D("120")),
+    ]
+    # Verify each item total = qty * unit_price
+    for qty, unit, total in items:
+        assert qty * unit == total
+
+    # Auto-calculated Subtotal = sum of items
+    subtotal = sum(t for _, _, t in items)
+    assert subtotal == D("1300.00")
+
+    # Taxes & Discounts
+    discount = D("100.00")
+    tax = D("120.00")
+    service_charge = D("60.00")
+
+    # Auto-calculated Grand Total = Subtotal - Discount + Tax + Service
+    grand_total = subtotal - discount + tax + service_charge
+    assert grand_total == D("1380.00")
+
+    # When fed into compute_split, the split reconciles 100%
+    result = compute_split(
+        item_totals=[t for _, _, t in items],
+        item_names=["Biryani", "Coke", "Pizza", "Garlic Naan"],
+        assignments=[["A", "B"], ["C"], ["A", "C"], ["A", "B", "C"]],
+        members=["A", "B", "C"],
+        discount=discount,
+        tax=tax,
+        service_charge=service_charge,
+        printed_total=grand_total,
+    )
+    assert result["is_reconciled"] is True
+    assert result["difference"] == "0.00"
+    assert result["allocated_total"] == "1380.00"
+

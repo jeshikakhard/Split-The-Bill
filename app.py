@@ -175,8 +175,16 @@ def go_to(step: int):
 def clear_bill_scoped_widget_state():
     """Remove per-item / per-assignment widget keys to prevent stale widget state."""
     prefixes = ("item_name_", "item_qty_", "item_unit_", "item_total_", "assign_")
+    exact_keys = {
+        "bill_subtotal",
+        "bill_discount",
+        "bill_tax",
+        "bill_service_charge",
+        "bill_grand_total",
+        "auto_calc_totals",
+    }
     for key in list(st.session_state.keys()):
-        if key.startswith(prefixes):
+        if key.startswith(prefixes) or key in exact_keys:
             del st.session_state[key]
 
 
@@ -365,12 +373,60 @@ def render_upload():
 
 
 # ---------------------------------------------------------------------------
-# Step 2: Review
+# Step 2: Review (with Live Automatic Calculations)
 # ---------------------------------------------------------------------------
+
+def recalculate_totals():
+    """Recalculate subtotal and grand total based on current item totals and tax/discount inputs."""
+    if not st.session_state.get("auto_calc_totals", True):
+        return
+    bill = st.session_state.get("bill")
+    if not bill:
+        return
+
+    items_sum = Decimal("0.00")
+    for idx in range(len(bill.items)):
+        tot_str = st.session_state.get(f"item_total_{idx}")
+        if tot_str is not None:
+            items_sum += safe_decimal(tot_str, Decimal("0.00"))
+        else:
+            items_sum += bill.items[idx].total
+
+    st.session_state["bill_subtotal"] = f"{items_sum:.2f}"
+
+    disc = safe_decimal(st.session_state.get("bill_discount", "0"), Decimal("0.00"))
+    tax = safe_decimal(st.session_state.get("bill_tax", "0"), Decimal("0.00"))
+    service = safe_decimal(st.session_state.get("bill_service_charge", "0"), Decimal("0.00"))
+
+    grand_total = items_sum - disc + tax + service
+    st.session_state["bill_grand_total"] = f"{grand_total:.2f}"
+
+
+def on_item_change(idx: int):
+    """When quantity or unit price changes, auto-update item total and recalculate bill totals."""
+    q_str = st.session_state.get(f"item_qty_{idx}", "1")
+    u_str = st.session_state.get(f"item_unit_{idx}", "")
+    q = safe_decimal(q_str, Decimal("1"))
+    u = safe_decimal(u_str, None)
+    if u is not None:
+        st.session_state[f"item_total_{idx}"] = f"{(q * u):.2f}"
+    recalculate_totals()
+
+
+def on_item_total_change(idx: int):
+    """When item total changes directly, auto-update unit price and recalculate bill totals."""
+    q_str = st.session_state.get(f"item_qty_{idx}", "1")
+    t_str = st.session_state.get(f"item_total_{idx}", "0")
+    q = safe_decimal(q_str, Decimal("1"))
+    t = safe_decimal(t_str, Decimal("0.00"))
+    if q > Decimal("0"):
+        st.session_state[f"item_unit_{idx}"] = f"{(t / q):.2f}"
+    recalculate_totals()
+
 
 def render_review():
     bill: Bill = st.session_state.bill
-    st.subheader("Step 2 · Human Review & Verification")
+    st.subheader("Step 2 · Human Review & Live Calculation")
 
     if bill.is_demo:
         st.info("🎬 **Demo bill — sample data.** Not extracted from a live image. All values are editable.")
@@ -382,6 +438,31 @@ def render_review():
         "These indicate visual extraction clarity, not mathematical probabilities."
     )
 
+    # Initialize review state if not already initialized for this bill
+    if "auto_calc_totals" not in st.session_state:
+        st.session_state["auto_calc_totals"] = True
+
+    for idx, item in enumerate(bill.items):
+        if f"item_name_{idx}" not in st.session_state:
+            st.session_state[f"item_name_{idx}"] = item.name
+        if f"item_qty_{idx}" not in st.session_state:
+            st.session_state[f"item_qty_{idx}"] = str(item.quantity)
+        if f"item_unit_{idx}" not in st.session_state:
+            st.session_state[f"item_unit_{idx}"] = f"{item.unit_price:.2f}" if item.unit_price is not None else ""
+        if f"item_total_{idx}" not in st.session_state:
+            st.session_state[f"item_total_{idx}"] = f"{item.total:.2f}"
+
+    if "bill_discount" not in st.session_state:
+        st.session_state["bill_discount"] = f"{bill.discount:.2f}" if bill.discount is not None else "0.00"
+    if "bill_tax" not in st.session_state:
+        st.session_state["bill_tax"] = f"{bill.tax:.2f}" if bill.tax is not None else "0.00"
+    if "bill_service_charge" not in st.session_state:
+        st.session_state["bill_service_charge"] = f"{bill.service_charge:.2f}" if bill.service_charge is not None else "0.00"
+    if "bill_subtotal" not in st.session_state:
+        st.session_state["bill_subtotal"] = f"{bill.subtotal:.2f}" if bill.subtotal is not None else f"{bill.items_sum():.2f}"
+    if "bill_grand_total" not in st.session_state:
+        st.session_state["bill_grand_total"] = f"{bill.total:.2f}" if bill.total is not None else f"{bill.computed_total():.2f}"
+
     # Restaurant Name & Date
     c1, c2 = st.columns(2)
     with c1:
@@ -392,22 +473,36 @@ def render_review():
         st.caption(f"Extraction Confidence: {confidence_badge(bill.field_confidence.date)}")
 
     st.markdown("#### 🍽️ Line Items")
-    st.caption("Check each item's name, quantity, unit price, and total. Add or remove items if needed.")
+    st.caption("Editing Qty or Unit Price automatically recalculates Item Total, Subtotal, and Grand Total.")
 
-    edited_items: list[BillItem] = []
     indices_to_delete = []
 
-    for idx, item in enumerate(bill.items):
+    for idx in range(len(bill.items)):
+        item = bill.items[idx]
         with st.container(border=True):
             cols = st.columns([3, 1, 1.2, 1.4, 1.4, 0.5])
-            item_name = cols[0].text_input(f"Item #{idx+1} Name", value=item.name, key=f"item_name_{idx}")
-            qty = cols[1].text_input("Qty", value=str(item.quantity), key=f"item_qty_{idx}")
-            unit_price = cols[2].text_input(
-                "Unit Price (₹)",
-                value=str(item.unit_price) if item.unit_price is not None else "",
-                key=f"item_unit_{idx}",
+            cols[0].text_input(
+                f"Item #{idx+1} Name",
+                key=f"item_name_{idx}",
             )
-            total = cols[3].text_input("Item Total (₹)", value=str(item.total), key=f"item_total_{idx}")
+            cols[1].text_input(
+                "Qty",
+                key=f"item_qty_{idx}",
+                on_change=on_item_change,
+                args=(idx,),
+            )
+            cols[2].text_input(
+                "Unit Price (₹)",
+                key=f"item_unit_{idx}",
+                on_change=on_item_change,
+                args=(idx,),
+            )
+            cols[3].text_input(
+                "Item Total (₹)",
+                key=f"item_total_{idx}",
+                on_change=on_item_total_change,
+                args=(idx,),
+            )
             cols[4].markdown(f"<div style='margin-top:28px'>{confidence_badge(item.confidence)}</div>", unsafe_allow_html=True)
             
             # Delete button (only allow if > 1 item exists)
@@ -415,83 +510,126 @@ def render_review():
                 if cols[5].button("🗑️", key=f"del_item_{idx}", help="Delete this item"):
                     indices_to_delete.append(idx)
 
-            parsed_total = safe_decimal(total, Decimal("0.00"))
-            edited_items.append(
-                BillItem(
-                    name=item_name.strip() or item.name,
-                    quantity=safe_decimal(qty, Decimal("1")),
-                    unit_price=safe_decimal(unit_price, None),
-                    total=parsed_total,
-                    confidence=item.confidence,
-                )
-            )
-
     # Handle deletion if triggered
     if indices_to_delete:
         for idx in sorted(indices_to_delete, reverse=True):
             bill.items.pop(idx)
         clear_bill_scoped_widget_state()
+        recalculate_totals()
         st.rerun()
 
-    # Add Item Button
-    if st.button("➕ Add Line Item", type="secondary"):
-        bill.items.append(
-            BillItem(
-                name=f"Custom Item {len(bill.items) + 1}",
+    # Add Item Button & Auto-calculate toggle
+    col_add1, col_add2 = st.columns([1, 2])
+    with col_add1:
+        if st.button("➕ Add Line Item", type="secondary", use_container_width=True):
+            new_idx = len(bill.items)
+            new_item = BillItem(
+                name=f"Custom Item {new_idx + 1}",
                 quantity=Decimal("1"),
                 unit_price=Decimal("0.00"),
                 total=Decimal("0.00"),
                 confidence=1.0,
             )
+            bill.items.append(new_item)
+            st.session_state[f"item_name_{new_idx}"] = new_item.name
+            st.session_state[f"item_qty_{new_idx}"] = "1"
+            st.session_state[f"item_unit_{new_idx}"] = "0.00"
+            st.session_state[f"item_total_{new_idx}"] = "0.00"
+            recalculate_totals()
+            st.rerun()
+
+    with col_add2:
+        st.toggle(
+            "⚡ Automatic Real-Time Calculations (Subtotal & Grand Total)",
+            key="auto_calc_totals",
+            on_change=recalculate_totals,
+            help="When enabled, adding items or editing prices automatically recalculates Subtotal and Grand Total in real time.",
         )
-        clear_bill_scoped_widget_state()
-        st.rerun()
 
     st.markdown("#### 💰 Bill Totals & Taxes")
     t1, t2, t3, t4, t5 = st.columns(5)
     with t1:
-        subtotal = t1.text_input(
-            "Subtotal (₹)", value=str(bill.subtotal) if bill.subtotal is not None else ""
+        t1.text_input(
+            "Subtotal (₹)",
+            key="bill_subtotal",
+            disabled=st.session_state.get("auto_calc_totals", True),
+            help="Automatically calculated sum of all item totals above",
         )
-        t1.caption(f"Subtotal: {confidence_badge(bill.field_confidence.subtotal)}")
+        t1.caption("Auto-sum of items" if st.session_state.get("auto_calc_totals", True) else f"Confidence: {confidence_badge(bill.field_confidence.subtotal)}")
     with t2:
-        discount = t2.text_input("Discount (₹)", value=str(bill.discount or "0"))
+        t2.text_input(
+            "Discount (₹)",
+            key="bill_discount",
+            on_change=recalculate_totals,
+            help="Total discount to deduct",
+        )
         t2.caption(f"Discount: {confidence_badge(bill.field_confidence.discount)}")
     with t3:
-        tax = t3.text_input("GST / Tax (₹)", value=str(bill.tax or "0"))
+        t3.text_input(
+            "GST / Tax (₹)",
+            key="bill_tax",
+            on_change=recalculate_totals,
+            help="GST or tax to add",
+        )
         t3.caption(f"GST: {confidence_badge(bill.field_confidence.tax)}")
     with t4:
-        service_charge = t4.text_input("Service Charge (₹)", value=str(bill.service_charge or "0"))
+        t4.text_input(
+            "Service Charge (₹)",
+            key="bill_service_charge",
+            on_change=recalculate_totals,
+            help="Service charge to add",
+        )
         t4.caption(f"Service: {confidence_badge(bill.field_confidence.service_charge)}")
     with t5:
-        total_val = t5.text_input(
-            "Printed Total (₹)", value=str(bill.total) if bill.total is not None else ""
+        t5.text_input(
+            "Grand Total (₹)",
+            key="bill_grand_total",
+            disabled=st.session_state.get("auto_calc_totals", True),
+            help="Subtotal - Discount + Tax + Service Charge",
         )
-        t5.caption(f"Total: {confidence_badge(bill.field_confidence.total)}")
+        t5.caption("Auto-computed total" if st.session_state.get("auto_calc_totals", True) else f"Printed total: {confidence_badge(bill.field_confidence.total)}")
 
-    # Consistency checks
+    # Compute current values for display and validation
+    edited_items: list[BillItem] = []
+    for idx in range(len(bill.items)):
+        it_name = st.session_state.get(f"item_name_{idx}", bill.items[idx].name).strip() or bill.items[idx].name
+        it_qty = safe_decimal(st.session_state.get(f"item_qty_{idx}"), Decimal("1"))
+        it_unit = safe_decimal(st.session_state.get(f"item_unit_{idx}"), None)
+        it_total = safe_decimal(st.session_state.get(f"item_total_{idx}"), Decimal("0.00"))
+        edited_items.append(
+            BillItem(
+                name=it_name,
+                quantity=it_qty,
+                unit_price=it_unit,
+                total=it_total,
+                confidence=bill.items[idx].confidence,
+            )
+        )
+
     items_sum = sum((i.total for i in edited_items), Decimal("0"))
-    subtotal_val = safe_decimal(subtotal, items_sum)
-    discount_val = safe_decimal(discount, Decimal("0.00"))
-    tax_val = safe_decimal(tax, Decimal("0.00"))
-    service_val = safe_decimal(service_charge, Decimal("0.00"))
-    printed_val = safe_decimal(total_val, None)
+    subtotal_val = safe_decimal(st.session_state.get("bill_subtotal"), items_sum)
+    discount_val = safe_decimal(st.session_state.get("bill_discount"), Decimal("0.00"))
+    tax_val = safe_decimal(st.session_state.get("bill_tax"), Decimal("0.00"))
+    service_val = safe_decimal(st.session_state.get("bill_service_charge"), Decimal("0.00"))
+    printed_val = safe_decimal(st.session_state.get("bill_grand_total"), None)
 
     computed_sum = subtotal_val - discount_val + tax_val + service_val
 
-    if abs(items_sum - subtotal_val) > Decimal("1.00"):
-        st.warning(
-            f"⚠️ **Line Items Mismatch**: Items sum to **{format_money(items_sum)}** "
-            f"but subtotal is listed as **{format_money(subtotal_val)}** (diff: {format_money(abs(items_sum - subtotal_val))}). "
-            f"You can adjust either above."
-        )
+    if not st.session_state.get("auto_calc_totals", True):
+        if abs(items_sum - subtotal_val) > Decimal("1.00"):
+            st.warning(
+                f"⚠️ **Line Items Mismatch**: Items sum to **{format_money(items_sum)}** "
+                f"but subtotal is listed as **{format_money(subtotal_val)}** (diff: {format_money(abs(items_sum - subtotal_val))})."
+            )
 
-    if printed_val is not None and abs(computed_sum - printed_val) > Decimal("1.00"):
-        st.warning(
-            f"⚠️ **Printed Total Inconsistency**: Subtotal - Discount + Tax + Service = "
-            f"**{format_money(computed_sum)}**, but printed total is **{format_money(printed_val)}** "
-            f"(diff: {format_money(abs(computed_sum - printed_val))})."
-        )
+        if printed_val is not None and abs(computed_sum - printed_val) > Decimal("1.00"):
+            st.warning(
+                f"⚠️ **Printed Total Inconsistency**: Subtotal - Discount + Tax + Service = "
+                f"**{format_money(computed_sum)}**, but printed total is **{format_money(printed_val)}** "
+                f"(diff: {format_money(abs(computed_sum - printed_val))})."
+            )
+    else:
+        st.success(f"✨ **Live Auto-Calculation Active**: Subtotal = **{format_money(subtotal_val)}** · Final Grand Total = **{format_money(computed_sum)}**")
 
     st.divider()
     b1, b2 = st.columns([1, 1])
@@ -509,7 +647,7 @@ def render_review():
                 discount=discount_val,
                 tax=tax_val,
                 service_charge=service_val,
-                total=printed_val,
+                total=printed_val if printed_val is not None else computed_sum,
                 field_confidence=bill.field_confidence.model_dump() if hasattr(bill.field_confidence, "model_dump") else bill.field_confidence,
                 is_demo=bill.is_demo,
                 raw_notes=bill.raw_notes,
